@@ -1,0 +1,24 @@
+# Build output
+bookstore-api/target/
+*.class
+*.log
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local tooling / secrets
+.tools/
+.env
+*.local.properties
+
+# Source material (large binary, not part of the code)
+*.pptx

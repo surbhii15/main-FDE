@@ -1,0 +1,1573 @@
+openapi: 3.1.0
+info:
+  title: E-Bookstore API
+  description: |-
+    Backend for the e-bookstore capstone: authentication, catalogue (categories, brands, products, related items), cart, recommendations, addresses, checkout with gift points, payments, order history, buy-again and 48-hour cancellation.
+
+    Call `POST /api/auth/login`, then click **Authorize** and paste the `accessToken`.
+  version: 1.0.0
+servers:
+- url: http://localhost:8080
+  description: Generated server url
+security:
+- bearerAuth: []
+tags:
+- name: Checkout & Orders
+  description: "Checkout, payment, confirmation, order history, buy again and cancellation\
+    \ (journey steps 4, 9-12)"
+- name: Addresses
+  description: Delivery address book (journey step 9)
+- name: Recommendations
+  description: Items recommended from order history (journey step 8)
+- name: Cart
+  description: Shopping basket (journey step 8)
+- name: Admin — Catalogue
+  description: Catalogue management (ADMIN role)
+- name: Gift points
+  description: Gift-point balance and history (journey step 10)
+- name: Catalogue
+  description: "Categories, brands, product search, product page and related products\
+    \ (journey steps 3, 5, 6, 7) — public"
+- name: Auth & Profile
+  description: Login page / user authentication (journey steps 1-2)
+paths:
+  /api/users/me:
+    get:
+      tags:
+      - Auth & Profile
+      summary: "Current user's profile, including gift-point balance"
+      operationId: me
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+    put:
+      tags:
+      - Auth & Profile
+      summary: Update the current user's name and phone
+      operationId: update
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/cart/items/{productId}:
+    put:
+      tags:
+      - Cart
+      summary: Set the quantity of a cart item (0 removes it)
+      operationId: update_1
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCartItemRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CartResponse"
+    delete:
+      tags:
+      - Cart
+      summary: Remove a product from the cart
+      operationId: remove
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CartResponse"
+  /api/admin/products/{id}:
+    put:
+      tags:
+      - Admin — Catalogue
+      summary: Update a product
+      operationId: update_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProductResponse"
+    delete:
+      tags:
+      - Admin — Catalogue
+      summary: Remove a product from the catalogue (soft delete)
+      operationId: delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "204":
+          description: No Content
+  /api/addresses/{id}:
+    put:
+      tags:
+      - Addresses
+      summary: Update a delivery address
+      operationId: update_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AddressResponse"
+    delete:
+      tags:
+      - Addresses
+      summary: Delete a delivery address
+      operationId: delete_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "204":
+          description: No Content
+  /api/orders:
+    get:
+      tags:
+      - Checkout & Orders
+      summary: "My order history, newest first"
+      operationId: history
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - PENDING_PAYMENT
+          - CONFIRMED
+          - CANCELLED
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 10
+          maximum: 50
+          minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseOrderSummaryResponse"
+    post:
+      tags:
+      - Checkout & Orders
+      summary: "Place an order from the cart (choose delivery address, redeem gift\
+        \ points)"
+      description: Reserves stock and points; the order is PENDING_PAYMENT until paid.
+      operationId: checkout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+  /api/orders/{orderId}/payments:
+    post:
+      tags:
+      - Checkout & Orders
+      summary: "Pay for an order (credit/debit card, UPI, net banking or cash on delivery)"
+      description: "Returns the payment record and the purchase confirmation. A declined\
+        \ payment is recorded with status FAILED and the order can be paid again.\
+        \ Test hooks: a card ending in 0002 or a UPI id ending in @fail is declined."
+      operationId: pay
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PaymentResultResponse"
+  /api/orders/{orderId}/cancel:
+    post:
+      tags:
+      - Checkout & Orders
+      summary: Cancel an order within 48 hours of purchase
+      description: "Releases stock, refunds the payment, returns redeemed points and\
+        \ reverses earned points."
+      operationId: cancel
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+  /api/orders/{orderId}/buy-again:
+    post:
+      tags:
+      - Checkout & Orders
+      summary: "Buy it again: add this order's available items back to the cart"
+      operationId: buyAgain
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BuyAgainResponse"
+  /api/cart/items:
+    post:
+      tags:
+      - Cart
+      summary: Add a product to the cart (adds to the existing quantity)
+      operationId: add
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddCartItemRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CartResponse"
+  /api/auth/register:
+    post:
+      tags:
+      - Auth & Profile
+      summary: Register a customer account and receive a JWT
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+      security: []
+  /api/auth/login:
+    post:
+      tags:
+      - Auth & Profile
+      summary: Log in with email and password and receive a JWT
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+      security: []
+  /api/admin/products:
+    post:
+      tags:
+      - Admin — Catalogue
+      summary: Create a product
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProductResponse"
+  /api/admin/categories:
+    post:
+      tags:
+      - Admin — Catalogue
+      summary: Create a category
+      operationId: createCategory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+  /api/admin/brands:
+    post:
+      tags:
+      - Admin — Catalogue
+      summary: Create a brand
+      operationId: createBrand
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrandRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BrandResponse"
+  /api/addresses:
+    get:
+      tags:
+      - Addresses
+      summary: List my delivery addresses (default first)
+      operationId: list
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AddressResponse"
+    post:
+      tags:
+      - Addresses
+      summary: Add a delivery address
+      operationId: create_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AddressResponse"
+  /api/users/me/gift-points:
+    get:
+      tags:
+      - Gift points
+      summary: "My gift-point balance, redemption rules and recent transactions"
+      operationId: summary
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PointsSummaryResponse"
+  /api/recommendations:
+    get:
+      tags:
+      - Recommendations
+      summary: "Books recommended for me, with the reason for each"
+      operationId: forMe
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 6
+          maximum: 20
+          minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recommendation"
+  /api/products:
+    get:
+      tags:
+      - Catalogue
+      summary: Browse / search the catalogue
+      description: "Filter by category, brand, author, free text (title/author/ISBN),\
+        \ price range and stock."
+      operationId: products
+      parameters:
+      - name: categoryId
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: brandId
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: author
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: q
+        in: query
+        description: "Free text matched against title, author and ISBN"
+        required: false
+        schema:
+          type: string
+      - name: minPrice
+        in: query
+        required: false
+        schema:
+          type: number
+      - name: maxPrice
+        in: query
+        required: false
+        schema:
+          type: number
+      - name: inStock
+        in: query
+        required: false
+        schema:
+          type: boolean
+      - name: sort
+        in: query
+        required: false
+        schema:
+          type: string
+          default: TITLE
+          enum:
+          - TITLE
+          - PRICE_ASC
+          - PRICE_DESC
+          - RATING
+          - NEWEST
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          maximum: 100
+          minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseProductResponse"
+      security: []
+  /api/products/{id}:
+    get:
+      tags:
+      - Catalogue
+      summary: "Product page: details, tentative delivery date and related products"
+      operationId: product
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProductDetailResponse"
+      security: []
+  /api/products/{id}/related:
+    get:
+      tags:
+      - Catalogue
+      summary: "Related products (same author first, then same category)"
+      operationId: related
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductResponse"
+      security: []
+  /api/payments/methods:
+    get:
+      tags:
+      - Checkout & Orders
+      summary: Available payment options
+      operationId: paymentMethods
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PaymentMethodOption"
+  /api/orders/{orderId}:
+    get:
+      tags:
+      - Checkout & Orders
+      summary: Order details and purchase confirmation
+      operationId: get
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+  /api/checkout/preview:
+    get:
+      tags:
+      - Checkout & Orders
+      summary: "Payment page summary: totals with gift points applied, and payment\
+        \ options"
+      operationId: preview
+      parameters:
+      - name: pointsToRedeem
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CheckoutPreviewResponse"
+  /api/categories:
+    get:
+      tags:
+      - Catalogue
+      summary: List product categories
+      operationId: categories
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryResponse"
+      security: []
+  /api/categories/{categoryId}/products:
+    get:
+      tags:
+      - Catalogue
+      summary: Product catalogue for one category
+      operationId: productsInCategory
+      parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: brandId
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: sort
+        in: query
+        required: false
+        schema:
+          type: string
+          default: TITLE
+          enum:
+          - TITLE
+          - PRICE_ASC
+          - PRICE_DESC
+          - RATING
+          - NEWEST
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          maximum: 100
+          minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseProductResponse"
+      security: []
+  /api/cart:
+    get:
+      tags:
+      - Cart
+      summary: View my cart with subtotal and tentative delivery date
+      operationId: get_1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CartResponse"
+    delete:
+      tags:
+      - Cart
+      summary: Empty the cart
+      operationId: clear
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CartResponse"
+  /api/brands:
+    get:
+      tags:
+      - Catalogue
+      summary: List brands (publishers)
+      operationId: brands
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BrandResponse"
+      security: []
+components:
+  schemas:
+    UpdateProfileRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+          maxLength: 150
+          minLength: 0
+        phone:
+          type: string
+          pattern: "^[+0-9 -]{7,20}$"
+      required:
+      - fullName
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        fullName:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum:
+          - CUSTOMER
+          - ADMIN
+        giftPoints:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+    UpdateCartItemRequest:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          format: int32
+          maximum: 99
+          minimum: 0
+      required:
+      - quantity
+    CartItemResponse:
+      type: object
+      properties:
+        productId:
+          type: integer
+          format: int64
+        sku:
+          type: string
+        title:
+          type: string
+        author:
+          type: string
+        imageUrl:
+          type: string
+        unitPrice:
+          type: number
+        quantity:
+          type: integer
+          format: int32
+        lineTotal:
+          type: number
+        available:
+          type: boolean
+        stockQuantity:
+          type: integer
+          format: int32
+        estimatedDeliveryDate:
+          type: string
+          format: date
+    CartResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartItemResponse"
+        itemCount:
+          type: integer
+          format: int32
+        subtotal:
+          type: number
+        estimatedDeliveryDate:
+          type: string
+          format: date
+        readyForCheckout:
+          type: boolean
+    ProductRequest:
+      type: object
+      properties:
+        sku:
+          type: string
+          maxLength: 50
+          minLength: 0
+        title:
+          type: string
+          maxLength: 255
+          minLength: 0
+        author:
+          type: string
+          maxLength: 150
+          minLength: 0
+        isbn:
+          type: string
+          pattern: "^[0-9X-]{10,17}$"
+        description:
+          type: string
+          maxLength: 4000
+          minLength: 0
+        price:
+          type: number
+          minimum: 0.00
+        stockQuantity:
+          type: integer
+          format: int32
+          minimum: 0
+        deliveryDays:
+          type: integer
+          format: int32
+          maximum: 60
+          minimum: 0
+        rating:
+          type: number
+          maximum: 5.0
+          minimum: 0.0
+        imageUrl:
+          type: string
+          maxLength: 500
+          minLength: 0
+        active:
+          type: boolean
+        categoryId:
+          type: integer
+          format: int64
+        brandId:
+          type: integer
+          format: int64
+      required:
+      - author
+      - brandId
+      - categoryId
+      - deliveryDays
+      - price
+      - sku
+      - stockQuantity
+      - title
+    ProductResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        sku:
+          type: string
+        title:
+          type: string
+        author:
+          type: string
+        isbn:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        stockQuantity:
+          type: integer
+          format: int32
+        inStock:
+          type: boolean
+        deliveryDays:
+          type: integer
+          format: int32
+        estimatedDeliveryDate:
+          type: string
+          format: date
+        rating:
+          type: number
+        imageUrl:
+          type: string
+        active:
+          type: boolean
+        category:
+          $ref: "#/components/schemas/Ref"
+        brand:
+          $ref: "#/components/schemas/Ref"
+    Ref:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    AddressRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 50
+          minLength: 0
+        recipientName:
+          type: string
+          maxLength: 150
+          minLength: 0
+        line1:
+          type: string
+          maxLength: 255
+          minLength: 0
+        line2:
+          type: string
+          maxLength: 255
+          minLength: 0
+        city:
+          type: string
+          maxLength: 100
+          minLength: 0
+        state:
+          type: string
+          maxLength: 100
+          minLength: 0
+        postalCode:
+          type: string
+          minLength: 1
+          pattern: "^[A-Za-z0-9 -]{3,20}$"
+        country:
+          type: string
+          maxLength: 100
+          minLength: 0
+        phone:
+          type: string
+          pattern: "^[+0-9 -]{7,20}$"
+        isDefault:
+          type: boolean
+      required:
+      - city
+      - country
+      - line1
+      - postalCode
+      - recipientName
+    AddressResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        label:
+          type: string
+        recipientName:
+          type: string
+        line1:
+          type: string
+        line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postalCode:
+          type: string
+        country:
+          type: string
+        phone:
+          type: string
+        isDefault:
+          type: boolean
+    CheckoutRequest:
+      type: object
+      properties:
+        addressId:
+          type: integer
+          format: int64
+        pointsToRedeem:
+          type: integer
+          format: int32
+          minimum: 0
+      required:
+      - addressId
+    OrderItemResponse:
+      type: object
+      properties:
+        productId:
+          type: integer
+          format: int64
+        title:
+          type: string
+        unitPrice:
+          type: number
+        quantity:
+          type: integer
+          format: int32
+        lineTotal:
+          type: number
+    OrderResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        orderNumber:
+          type: string
+        status:
+          type: string
+          enum:
+          - PENDING_PAYMENT
+          - CONFIRMED
+          - CANCELLED
+        placedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItemResponse"
+        subtotal:
+          type: number
+        pointsRedeemed:
+          type: integer
+          format: int32
+        discount:
+          type: number
+        total:
+          type: number
+        pointsEarned:
+          type: integer
+          format: int32
+        shippingAddress:
+          $ref: "#/components/schemas/ShippingAddress"
+        estimatedDeliveryDate:
+          type: string
+          format: date
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentResponse"
+        cancellable:
+          type: boolean
+        cancellableUntil:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        method:
+          type: string
+          enum:
+          - CREDIT_CARD
+          - DEBIT_CARD
+          - UPI
+          - NET_BANKING
+          - CASH_ON_DELIVERY
+        status:
+          type: string
+          enum:
+          - SUCCESS
+          - PENDING
+          - FAILED
+          - REFUNDED
+          - CANCELLED
+        amount:
+          type: number
+        cardBrand:
+          type: string
+        cardLast4:
+          type: string
+        transactionRef:
+          type: string
+        failureReason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ShippingAddress:
+      type: object
+      properties:
+        recipientName:
+          type: string
+        line1:
+          type: string
+        line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postalCode:
+          type: string
+        country:
+          type: string
+        phone:
+          type: string
+    CardDetails:
+      type: object
+      properties:
+        number:
+          type: string
+          minLength: 1
+          pattern: "^[0-9 ]{12,23}$"
+        holderName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        expiryMonth:
+          type: integer
+          format: int32
+          maximum: 12
+          minimum: 1
+        expiryYear:
+          type: integer
+          format: int32
+          maximum: 2100
+          minimum: 2000
+        cvv:
+          type: string
+          minLength: 1
+          pattern: "^[0-9]{3,4}$"
+      required:
+      - cvv
+      - expiryMonth
+      - expiryYear
+      - holderName
+      - number
+    PaymentRequest:
+      type: object
+      properties:
+        method:
+          type: string
+          enum:
+          - CREDIT_CARD
+          - DEBIT_CARD
+          - UPI
+          - NET_BANKING
+          - CASH_ON_DELIVERY
+        card:
+          $ref: "#/components/schemas/CardDetails"
+        upiId:
+          type: string
+          pattern: "^[\\w.-]{2,64}@[A-Za-z]{2,64}$"
+        bankCode:
+          type: string
+          pattern: "^[A-Z]{3,10}$"
+      required:
+      - method
+    PaymentResultResponse:
+      type: object
+      properties:
+        payment:
+          $ref: "#/components/schemas/PaymentResponse"
+        order:
+          $ref: "#/components/schemas/OrderResponse"
+        message:
+          type: string
+    BuyAgainResponse:
+      type: object
+      properties:
+        cart:
+          $ref: "#/components/schemas/CartResponse"
+        added:
+          type: array
+          items:
+            type: string
+        skipped:
+          type: array
+          items:
+            type: string
+    AddCartItemRequest:
+      type: object
+      properties:
+        productId:
+          type: integer
+          format: int64
+        quantity:
+          type: integer
+          format: int32
+          maximum: 99
+          minimum: 1
+      required:
+      - productId
+      - quantity
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          minLength: 0
+        password:
+          type: string
+          maxLength: 72
+          minLength: 8
+        fullName:
+          type: string
+          maxLength: 150
+          minLength: 0
+        phone:
+          type: string
+          pattern: "^[+0-9 -]{7,20}$"
+      required:
+      - email
+      - fullName
+      - password
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+        expiresInSeconds:
+          type: integer
+          format: int64
+        user:
+          $ref: "#/components/schemas/UserResponse"
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+      required:
+      - email
+      - password
+    CategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 0
+        slug:
+          type: string
+          minLength: 1
+          pattern: "^[a-z0-9-]{2,100}$"
+        description:
+          type: string
+          maxLength: 500
+          minLength: 0
+      required:
+      - name
+      - slug
+    CategoryResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+    BrandRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 0
+        description:
+          type: string
+          maxLength: 500
+          minLength: 0
+      required:
+      - name
+    BrandResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+    PointsSummaryResponse:
+      type: object
+      properties:
+        balance:
+          type: integer
+          format: int32
+        maxRedeemPercent:
+          type: integer
+          format: int32
+        earnPerAmount:
+          type: integer
+          format: int32
+        recentTransactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PointsTransactionResponse"
+    PointsTransactionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        orderId:
+          type: integer
+          format: int64
+        points:
+          type: integer
+          format: int32
+        type:
+          type: string
+          enum:
+          - EARNED
+          - REDEEMED
+          - REFUNDED
+          - REVERSED
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Recommendation:
+      type: object
+      properties:
+        product:
+          $ref: "#/components/schemas/ProductResponse"
+        reason:
+          type: string
+    PageResponseProductResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    ProductDetailResponse:
+      type: object
+      properties:
+        product:
+          $ref: "#/components/schemas/ProductResponse"
+        relatedProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductResponse"
+    PaymentMethodOption:
+      type: object
+      properties:
+        method:
+          type: string
+          enum:
+          - CREDIT_CARD
+          - DEBIT_CARD
+          - UPI
+          - NET_BANKING
+          - CASH_ON_DELIVERY
+        label:
+          type: string
+        requires:
+          type: string
+    OrderSummaryResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        orderNumber:
+          type: string
+        status:
+          type: string
+          enum:
+          - PENDING_PAYMENT
+          - CONFIRMED
+          - CANCELLED
+        placedAt:
+          type: string
+          format: date-time
+        itemCount:
+          type: integer
+          format: int32
+        itemTitles:
+          type: array
+          items:
+            type: string
+        total:
+          type: number
+        estimatedDeliveryDate:
+          type: string
+          format: date
+        cancellable:
+          type: boolean
+    PageResponseOrderSummaryResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderSummaryResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    CheckoutPreviewResponse:
+      type: object
+      properties:
+        cart:
+          $ref: "#/components/schemas/CartResponse"
+        subtotal:
+          type: number
+        giftPointBalance:
+          type: integer
+          format: int32
+        maxRedeemablePoints:
+          type: integer
+          format: int32
+        pointsToRedeem:
+          type: integer
+          format: int32
+        discount:
+          type: number
+        total:
+          type: number
+        pointsToEarn:
+          type: integer
+          format: int32
+        paymentMethods:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentMethodOption"
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
